@@ -4,7 +4,8 @@
 
 Very simple rust app that periodically checks the current (nvidia) GPU temps and adjusts the fan speed percentage accordingly (if it deems the temperature delta justifies adjusting the fan speed that is).
 It does so based on a (currently hard coded) fan curve.  
-It allows adjusting the fan speed without switching to a "rootful" X.
+It allows adjusting the fan speed without switching to a "rootful" X.  
+The nvidia-settings part is inspired by https://github.com/foucault/nvfancontrol/, check it out.
 
 ## how?
 
