@@ -2,7 +2,7 @@
 
 ## what?
 
-A application that periodically checks the current (nvidia) GPU temps and adjusts the fan speed percentage accordingly (if it deems the temperature delta justifies adjusting the fan speed that is).
+Very simple rust app that periodically checks the current (nvidia) GPU temps and adjusts the fan speed percentage accordingly (if it deems the temperature delta justifies adjusting the fan speed that is).
 It does so based on a (currently hard coded) fan curve.  
 It allows adjusting the fan speed without switching to a "rootful" X.
 
@@ -22,4 +22,4 @@ Not tested with anything else.
 
 `./start.sh`
 
-Use `RUST_LOG` env variable to adjust log level if you're curious what it does and when. Defaults to pretty quiet `info`.
+Use `RUST_LOG` env variable to adjust log level if you're curious what it does and when. Defaults to `info` level, which is very quiet.
