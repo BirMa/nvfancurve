@@ -285,7 +285,7 @@ fn call_xhost_remove() -> Result<(), String> {
     )
 }
 
-/// sudo /usr/bin/nvidia-settings -a "*:1[gpu:0]/GPUFanControlState=1" -a "*:1[fan-0]/GPUTargetFanSpeed=$PCT" -a "*:1[fan-1]/GPUTargetFanSpeed=$PCT"
+/// sudo nvidia-settings -a "*:1[gpu:0]/GPUFanControlState=1" -a "*:1[fan-0]/GPUTargetFanSpeed=$PCT" -a "*:1[fan-1]/GPUTargetFanSpeed=$PCT"
 fn call_nv_settings(fan_speed0: i8, fan_speed1: i8) -> Result<(), String> {
     make_call(
         "nvidia-settings",
@@ -303,7 +303,7 @@ fn call_nv_settings(fan_speed0: i8, fan_speed1: i8) -> Result<(), String> {
     )
 }
 
-/// sudo /usr/bin/nvidia-settings -a "*:1[gpu:0]/GPUFanControlState=0"
+/// sudo nvidia-settings -a "*:1[gpu:0]/GPUFanControlState=0"
 fn call_nv_settings_off() -> Result<(), String> {
     make_call(
         "nvidia-settings",
