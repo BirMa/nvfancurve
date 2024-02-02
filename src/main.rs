@@ -48,7 +48,7 @@ fn main() -> Result<(), String> {
         while continue_looping_clone_sudo_loop.load(Ordering::SeqCst) {
             thread::sleep(time::Duration::from_secs(240));
             log::trace!("sudo loop");
-            if let Err(err) = call_empty_sudo_echo() {
+            if let Err(err) = call_sudo_nop() {
                 log::warn!("sudo loop failed with '{}'", err);
                 continue_looping_clone_sudo_loop.store(false, Ordering::SeqCst);
             }
@@ -75,7 +75,7 @@ fn main() -> Result<(), String> {
         },
     ];
 
-    call_empty_sudo_echo()?;
+    call_sudo_nop()?;
 
     let mut cur_fan = 0.;
     let display = unsafe { XOpenDisplay(ptr::null()) };
@@ -312,8 +312,8 @@ fn call_nv_settings_off() -> Result<(), String> {
     )
 }
 
-fn call_empty_sudo_echo() -> Result<(), String> {
-    make_call("sudo loop", "sudo", &["echo", "loop"].to_vec())
+fn call_sudo_nop() -> Result<(), String> {
+    make_call("sudo loop", "sudo", &["true"].to_vec())
 }
 
 fn make_call(name: &str, prog: &str, args: &Vec<&str>) -> Result<(), String> {
