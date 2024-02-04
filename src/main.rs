@@ -40,7 +40,7 @@ const CURVE: &'static [FanAtTemp] = &[
 
 fn main() -> Result<(), String> {
     // setup
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let block_exit = Arc::new(AtomicBool::new(false));
     let block_exit_clone = block_exit.clone();
