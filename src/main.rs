@@ -1,8 +1,4 @@
-/*
-TODO
-- grab the interval for the sudo loop from /etc/sudoers
-*/
-
+use regex::Regex;
 use std::{
     ffi::{c_char, c_int, c_uint, c_void},
     process::Command,
@@ -22,6 +18,25 @@ struct FanAtTemp {
 // config
 const UPDATE_DELAY_S: f32 = 0.8;
 const MIN_DELTA_FAN_THRESHOLD: f32 = 2.1;
+const SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S: u64 = (5 * 60) - 10;
+const CURVE: &'static [FanAtTemp] = &[
+    FanAtTemp {
+        temp_c: 40.,
+        fan_pct: 43.,
+    },
+    FanAtTemp {
+        temp_c: 63.,
+        fan_pct: 60.,
+    },
+    FanAtTemp {
+        temp_c: 75.,
+        fan_pct: 83.,
+    },
+    FanAtTemp {
+        temp_c: 81.,
+        fan_pct: 100.,
+    },
+];
 
 fn main() -> Result<(), String> {
     // setup
@@ -44,10 +59,12 @@ fn main() -> Result<(), String> {
     })
     .expect("Error setting Ctrl-C handler");
 
+    let sudo_timeout_s = get_sudo_timeout_s()?;
+    log::debug!("sudo loop period: {}s", sudo_timeout_s);
     thread::spawn(move || {
         while continue_looping_clone_sudo_loop.load(Ordering::SeqCst) {
-            thread::sleep(time::Duration::from_secs(240));
-            log::trace!("sudo loop");
+            thread::sleep(time::Duration::from_secs(sudo_timeout_s));
+            log::debug!("sudo loop");
             if let Err(err) = call_sudo_nop() {
                 log::warn!("sudo loop failed with '{}'", err);
                 continue_looping_clone_sudo_loop.store(false, Ordering::SeqCst);
@@ -55,31 +72,12 @@ fn main() -> Result<(), String> {
         }
     });
 
-    //
-    const CURVE: &'static [FanAtTemp] = &[
-        FanAtTemp {
-            temp_c: 40.,
-            fan_pct: 43.,
-        },
-        FanAtTemp {
-            temp_c: 63.,
-            fan_pct: 60.,
-        },
-        FanAtTemp {
-            temp_c: 75.,
-            fan_pct: 83.,
-        },
-        FanAtTemp {
-            temp_c: 81.,
-            fan_pct: 100.,
-        },
-    ];
-
     call_sudo_nop()?;
 
     let mut cur_fan = 0.;
     let display = unsafe { XOpenDisplay(ptr::null()) };
 
+    // main loop
     loop {
         if !continue_looping.load(Ordering::SeqCst) {
             return Ok(());
@@ -137,7 +135,7 @@ fn set_fan(
         desired_fan
     );
     block_exit.store(true, Ordering::SeqCst);
-    let result = set_nv_fans(new_fan);
+    let result = set_nv_fans(new_fan, min_fan_pct);
     block_exit.store(false, Ordering::SeqCst);
     result.map(|_| new_fan)
 }
@@ -425,4 +423,50 @@ extern "C" {
         attribute: CTRL_ATTR,
         value: *mut c_int,
     ) -> c_int;
+}
+
+// OS stuff
+fn get_sudo_timeout_s() -> Result<u64, String> {
+    let re = Regex::new(r"timestamp_timeout=(?<t>\d+)").unwrap();
+
+    // sudo -l to get defaults of current user
+    let output = Command::new("sudo")
+        .args(["-l"])
+        .output()
+        .or_else(|x| Err(format!("error calling sudo {}", x)))?;
+    let out = String::from_utf8_lossy(&output.stdout);
+    let captures = re.captures_iter(&out).last();
+
+    let timeout_m = captures.map_or_else(
+        || {
+            log::debug!("no timestamp_timeout match in output");
+            SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S
+        },
+        |c| {
+            c.get(1).map_or_else(
+                || {
+                    log::debug!("(shouldn't happen) no timestamp_timeout match in output");
+                    SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S
+                },
+                |m| {
+                    m.as_str().parse().unwrap_or_else(|x| {
+                        log::debug!("failed parsing timestamp_timeout: {}", x);
+                        SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S
+                    })
+                },
+            )
+        },
+    );
+
+    let timeout_s = timeout_m * 60 - 5;
+
+    Ok(if timeout_s <= 0 {
+        log::debug!(
+            "sudo timeout too low, setting to default {}s",
+            SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S
+        );
+        SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S
+    } else {
+        timeout_s
+    })
 }
