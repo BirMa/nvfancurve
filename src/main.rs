@@ -249,11 +249,11 @@ mod tests {
 }
 
 /* NV STUFF */
-fn set_nv_fans(fan: f32) -> Result<(), String> {
+fn set_nv_fans(fan: f32, fan_min: f32) -> Result<(), String> {
     call_xhost_add()?;
 
-    let fan0 = (fan.floor() as i8).max(42); // TODO - should be fan curve min
-    let fan1 = (fan.ceil() as i8).min(100);
+    let fan0 = (fan.ceil() as i8).min(100);
+    let fan1 = (fan.floor() as i8).max(fan_min as i8);
 
     log::info!("setting fans to ({:}%, {:}%)", fan0, fan1);
     if let Err(mut err) = call_nv_settings(fan0, fan1) {
