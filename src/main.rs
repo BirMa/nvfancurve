@@ -1,3 +1,4 @@
+// TODO - add mode where app bisects min fan pct values and uses those instead of hardcoded values
 use regex::Regex;
 use std::{
     ffi::{c_char, c_int, c_uint, c_void},
