@@ -7,7 +7,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    thread, time,
+    thread,
+    time::{self, Duration, Instant},
 };
 
 struct FanAtTemp {
@@ -16,6 +17,9 @@ struct FanAtTemp {
 }
 
 // config
+/// How long to wait before ignoring the minimum delta fan threshold
+/// Useful so we settle at actual min fan speeds at some point
+const IGNORE_MIN_DELTA_THRESHOLD_AFTER_S: f32 = 13.0;
 const UPDATE_DELAY_S: f32 = 0.8;
 const MIN_DELTA_FAN_THRESHOLD: f32 = 2.1;
 const SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S: u64 = (5 * 60) - 10;
@@ -74,8 +78,10 @@ fn main() -> Result<(), String> {
 
     call_sudo_nop()?;
 
+    // TODO - Put all this stuff into some "state" object
     let mut cur_fan = 0.;
     let display = unsafe { XOpenDisplay(ptr::null()) };
+    let mut fan_last_updated: Instant = Instant::now();
 
     // main loop
     loop {
@@ -96,6 +102,7 @@ fn main() -> Result<(), String> {
             CURVE.first().unwrap().fan_pct,
             get_fan_step_up(cur_fan, desired_fan),
             &block_exit,
+            &mut fan_last_updated,
         )
         .unwrap();
     }
@@ -107,22 +114,38 @@ fn set_fan(
     min_fan_pct: f32,
     fan_step_up: f32,
     block_exit: &Arc<AtomicBool>,
+    fan_last_updated: &mut Instant,
 ) -> Result<f32, String> {
-    if (desired_fan - cur_fan).abs() <= MIN_DELTA_FAN_THRESHOLD {
+    // So we settle at actual min fan speeds after not updating fans for a while
+    let enough_time_passed =
+        fan_last_updated.elapsed() > Duration::from_secs_f32(IGNORE_MIN_DELTA_THRESHOLD_AFTER_S);
+
+    // To avoid overshooting at the slightest temp delta
+    let enough_fan_delta = if enough_time_passed {
+        (desired_fan - cur_fan).abs() > 0.05 // some hard coded tiny threshold so we stop setting the fan at some point
+    } else {
+        (desired_fan - cur_fan).abs() > MIN_DELTA_FAN_THRESHOLD
+    };
+
+    // Bypass fan-step-up if we're just settling the fan at the desired value after not updating for a while
+    let new_fan = if enough_time_passed {
+        desired_fan
+    } else {
+        (cur_fan + (desired_fan - cur_fan) * fan_step_up).max(min_fan_pct)
+    };
+
+    log::debug!(
+        "fan delta: {:?} => {:?}, fan delta (with step-up): {:?}, time passed: {:?}",
+        desired_fan - cur_fan,
+        enough_fan_delta,
+        new_fan - cur_fan,
+        enough_time_passed
+    );
+
+    if !enough_fan_delta {
         log::debug!(
             "not changing fan (desired_fan: {:.2}, cur_fan: {:.2})",
             desired_fan,
-            cur_fan
-        );
-        return Ok(cur_fan);
-    }
-
-    let new_fan = (cur_fan + (desired_fan - cur_fan) * fan_step_up).max(min_fan_pct);
-
-    if (new_fan - cur_fan).abs() <= MIN_DELTA_FAN_THRESHOLD {
-        log::debug!(
-            "not changing fan (new_fan: {:.2}, cur_fan: {:.2})",
-            new_fan,
             cur_fan
         );
         return Ok(cur_fan);
@@ -137,6 +160,9 @@ fn set_fan(
     block_exit.store(true, Ordering::SeqCst);
     let result = set_nv_fans(new_fan, min_fan_pct);
     block_exit.store(false, Ordering::SeqCst);
+
+    *fan_last_updated = Instant::now();
+
     result.map(|_| new_fan)
 }
 
