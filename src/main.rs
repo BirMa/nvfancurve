@@ -20,9 +20,18 @@ struct FanAtTemp {
 /// How long to wait before ignoring the minimum delta fan threshold
 /// Useful so we settle at actual min fan speeds at some point
 const IGNORE_MIN_DELTA_THRESHOLD_AFTER_S: f32 = 13.0;
+
+/// Polling rate
+/// How often we update the temperature reading and potentially fan speed
 const UPDATE_DELAY_S: f32 = 0.8;
+
+/// Minimum delta fan speed, lower deltas than this won't trigger a fan speed change
 const MIN_DELTA_FAN_THRESHOLD: f32 = 2.1;
+
+/// Default sudo timeout, whould we not be able to read it from sudoers file
 const SUDO_TIMESTAMP_TIMEOUT_DEFAULT_S: u64 = (5 * 60) - 10;
+
+/// Actual fan curve
 const CURVE: &'static [FanAtTemp] = &[
     FanAtTemp {
         temp_c: 40.,
@@ -278,6 +287,7 @@ mod tests {
 fn set_nv_fans(fan: f32, fan_min: f32) -> Result<(), String> {
     call_xhost_add()?;
 
+    // "Smooth" the int van pct value out over the two available fan speeds
     let fan0 = (fan.ceil() as i8).min(100);
     let fan1 = (fan.floor() as i8).max(fan_min as i8);
 
