@@ -137,6 +137,8 @@ fn set_fan(
     };
 
     // Bypass fan-step-up if we're just settling the fan at the desired value after not updating for a while
+    // Causes fan zigzagging by 1 pct point, but that's (imho) the only way to keep stable temp
+    // If only temps and fan speed weren integer...
     let new_fan = if enough_time_passed {
         desired_fan
     } else {
