@@ -288,7 +288,7 @@ fn set_nv_fans(fan: f32, fan_min: f32) -> Result<(), String> {
     call_xhost_add()?;
 
     // "Smooth" the int van pct value out over the two available fan speeds
-    let fan0 = (fan.ceil() as i8).min(100);
+    let fan0 = (fan.ceil() as i8).min(100); // TODO - these two coult "round" more cleverly
     let fan1 = (fan.floor() as i8).max(fan_min as i8);
 
     log::info!("setting fans to ({:}%, {:}%)", fan0, fan1);
