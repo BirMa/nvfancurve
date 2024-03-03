@@ -7,6 +7,7 @@ mod x11;
 
 use regex::Regex;
 use std::{
+    ffi::c_void,
     process::Command,
     ptr,
     sync::{
@@ -17,46 +18,62 @@ use std::{
     time::{self, Duration, Instant},
 };
 
+struct State {
+    display: *mut *mut c_void,
+    fan_cur: f32,
+    fan_last_updated: Instant,
+    fan_min_pct: f32,
+
+    block_exit: Arc<AtomicBool>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        let block_exit = Arc::new(AtomicBool::new(false));
+        Self {
+            display: unsafe { x11::XOpenDisplay(ptr::null()) },
+            fan_cur: 0.,
+            fan_last_updated: Instant::now(),
+            fan_min_pct: config::CURVE.first().unwrap().fan_pct,
+            block_exit,
+        }
+    }
+}
+
 fn main() -> Result<(), String> {
-    // setup
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let block_exit = Arc::new(AtomicBool::new(false));
-    let block_exit_clone = block_exit.clone();
-
+    let mut state = State::default();
+    let block_exit_handler_ref = state.block_exit.clone();
     let continue_looping = Arc::new(AtomicBool::new(true));
-    let continue_looping_clone_sigint_handler = continue_looping.clone();
-    let continue_looping_clone_sudo_loop = continue_looping.clone();
+    let continue_looping_sigint_handler_ref = continue_looping.clone();
+    let continue_looping_sudo_loop_ref = continue_looping.clone();
 
     ctrlc::set_handler(move || {
         log::info!("stopping...");
         let _ = nv::call_nv_settings_off();
-        if !block_exit_clone.load(Ordering::SeqCst) {
+        if !block_exit_handler_ref.load(Ordering::SeqCst) {
             std::process::exit(0);
         }
-        continue_looping_clone_sigint_handler.store(false, Ordering::SeqCst);
+
+        continue_looping_sigint_handler_ref.store(false, Ordering::SeqCst);
     })
     .expect("Error setting Ctrl-C handler");
 
     let sudo_timeout_s = get_sudo_timeout_s()?;
     log::debug!("sudo loop period: {}s", sudo_timeout_s);
     thread::spawn(move || {
-        while continue_looping_clone_sudo_loop.load(Ordering::SeqCst) {
+        while continue_looping_sudo_loop_ref.load(Ordering::SeqCst) {
             thread::sleep(time::Duration::from_secs(sudo_timeout_s));
             log::debug!("sudo loop");
             if let Err(err) = util::call_sudo_nop() {
                 log::warn!("sudo loop failed with '{}'", err);
-                continue_looping_clone_sudo_loop.store(false, Ordering::SeqCst);
+                continue_looping_sudo_loop_ref.store(false, Ordering::SeqCst);
             }
         }
     });
 
     util::call_sudo_nop()?;
-
-    // TODO - Put all this stuff into some "state" object
-    let mut cur_fan = 0.;
-    let display = unsafe { x11::XOpenDisplay(ptr::null()) };
-    let mut fan_last_updated: Instant = Instant::now();
 
     // main loop
     loop {
@@ -66,66 +83,52 @@ fn main() -> Result<(), String> {
 
         thread::sleep(time::Duration::from_secs_f32(config::UPDATE_DELAY_S));
 
-        let cur_temp = x11::get_nv_temp(0, display).unwrap() as f32;
+        let cur_temp = x11::get_nv_temp(0, state.display).unwrap() as f32;
         log::debug!("current nv temp: {:.0}C", cur_temp);
-        log::debug!("current fan: {:.2}%", cur_fan);
-        let desired_fan = tmp_to_fan(cur_temp, config::CURVE);
+        log::debug!("current fan: {:.2}%", state.fan_cur);
 
-        cur_fan = set_fan(
-            desired_fan,
-            cur_fan,
-            config::CURVE.first().unwrap().fan_pct,
-            get_fan_step_up(cur_fan, desired_fan),
-            &block_exit,
-            &mut fan_last_updated,
-        )
-        .unwrap();
+        let desired_fan = tmp_to_fan(cur_temp, config::CURVE);
+        state.fan_cur = set_fan(desired_fan, &mut state).unwrap();
     }
 }
 
-fn set_fan(
-    desired_fan: f32,
-    cur_fan: f32,
-    min_fan_pct: f32,
-    fan_step_up: f32,
-    block_exit_mutex_ref: &Arc<AtomicBool>,
-    fan_last_updated: &mut Instant,
-) -> Result<f32, String> {
+fn set_fan(desired_fan: f32, state: &mut State) -> Result<f32, String> {
     // So we settle at actual min fan speeds after not updating fans for a while
-    let enough_time_passed = fan_last_updated.elapsed()
+    let enough_time_passed = state.fan_last_updated.elapsed()
         > Duration::from_secs_f32(config::IGNORE_MIN_DELTA_THRESHOLD_AFTER_S);
 
     // To avoid overshooting at the slightest temp delta
     let enough_fan_delta = if enough_time_passed {
-        (desired_fan - cur_fan).abs() > 0.05 // some hard coded tiny threshold so we stop setting the fan at some point
+        (desired_fan - state.fan_cur).abs() > 0.05 // some hard coded tiny threshold so we stop setting the fan at some point
     } else {
-        (desired_fan - cur_fan).abs() > config::MIN_DELTA_FAN_THRESHOLD
+        (desired_fan - state.fan_cur).abs() > config::MIN_DELTA_FAN_THRESHOLD
     };
 
+    let fan_step_up = get_fan_step_up(state.fan_cur, desired_fan);
     // Bypass fan-step-up if we're just settling the fan at the desired value after not updating for a while
     // Causes fan zigzagging by 1 pct point, but that's (imho) the only way to keep stable temp
     // If only temps and fan speed weren integer...
     let new_fan = if enough_time_passed {
         desired_fan
     } else {
-        (cur_fan + (desired_fan - cur_fan) * fan_step_up).max(min_fan_pct)
+        (state.fan_cur + (desired_fan - state.fan_cur) * fan_step_up).max(state.fan_min_pct)
     };
 
     log::debug!(
         "fan delta: {:?} => {:?}, fan delta (with step-up): {:?}, time passed: {:?}",
-        desired_fan - cur_fan,
+        desired_fan - state.fan_cur,
         enough_fan_delta,
-        new_fan - cur_fan,
+        new_fan - state.fan_cur,
         enough_time_passed
     );
 
     if !enough_fan_delta {
         log::debug!(
-            "not changing fan (desired_fan: {:.2}, cur_fan: {:.2})",
+            "not changing fan (desired_fan: {:.2}, fan_cur: {:.2})",
             desired_fan,
-            cur_fan
+            state.fan_cur
         );
-        return Ok(cur_fan);
+        return Ok(state.fan_cur);
     }
 
     log::debug!(
@@ -134,11 +137,11 @@ fn set_fan(
         fan_step_up * 100.,
         desired_fan
     );
-    block_exit_mutex_ref.store(true, Ordering::SeqCst);
-    let result = nv::set_nv_fans(new_fan, min_fan_pct);
-    block_exit_mutex_ref.store(false, Ordering::SeqCst);
+    state.block_exit.store(true, Ordering::SeqCst);
+    let result = nv::set_nv_fans(new_fan, state.fan_min_pct);
+    state.block_exit.store(false, Ordering::SeqCst);
 
-    *fan_last_updated = Instant::now();
+    state.fan_last_updated = Instant::now();
 
     result.map(|_| new_fan)
 }
