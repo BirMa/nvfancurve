@@ -5,6 +5,7 @@ pub fn call_sudo_nop() -> Result<(), String> {
 }
 
 pub fn make_call(name: &str, prog: &str, args: &Vec<&str>) -> Result<(), String> {
+    log::trace!("calling \"{:?}\": {:?} {:?}", name, prog, args);
     let output = match Command::new(prog).args(args).output() {
         Ok(output) => output,
         Err(err) => return Err(format!("command {} failed: {}", name, err)),
@@ -15,7 +16,7 @@ pub fn make_call(name: &str, prog: &str, args: &Vec<&str>) -> Result<(), String>
 
 fn log_call_output(output: Vec<u8>) {
     log::trace!(
-        "\"\"\"{}\"\"\"",
+        "call returned: \"\"\"{}\"\"\"",
         std::str::from_utf8(&output)
             .or::<String>(Ok("<could not read output as utf-8>"))
             .unwrap()
