@@ -51,7 +51,7 @@ fn main() -> Result<(), String> {
 
     ctrlc::set_handler(move || {
         log::info!("stopping...");
-        let _ = nv::call_nv_settings_off();
+        let _ = nv::call_nv_settings_auto();
         if !block_exit_handler_ref.load(Ordering::SeqCst) {
             std::process::exit(0);
         }

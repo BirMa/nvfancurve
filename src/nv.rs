@@ -48,7 +48,7 @@ pub fn call_nv_settings(fan_speed0: i8, fan_speed1: i8) -> Result<(), String> {
 }
 
 /// sudo nvidia-settings -a "*:1[gpu:0]/GPUFanControlState=0"
-pub fn call_nv_settings_off() -> Result<(), String> {
+pub fn call_nv_settings_auto() -> Result<(), String> {
     util::make_call(
         "nvidia-settings",
         "sudo",
