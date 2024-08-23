@@ -1,0 +1,19 @@
+[Unit]
+Description=nvfancurve
+
+[Service]
+#Environment='RUSTFLAGS="-C target-cpu=native"'
+Environment='RUST_BACKTRACE=1'
+Environment='RUST_LOG=info'
+KillSignal=SIGINT
+RestartSec=5
+Restart=on-failure
+ExecStart=/home/md/sonstige/projects/coding_rust/nvfancurve/target/debug/nvfancurve
+
+# these will cause sudo to not work anymore
+#SystemCallArchitectures=native
+#MemoryDenyWriteExecute=true
+#NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
