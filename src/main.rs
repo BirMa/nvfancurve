@@ -1,4 +1,5 @@
 // TODO - add mode where app bisects min fan pct values and uses those instead of hardcoded values
+// TOOD - Kalman filter to get to target gpu temps? :D
 
 mod config;
 mod nv;
