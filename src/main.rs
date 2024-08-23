@@ -88,6 +88,17 @@ fn main() -> Result<(), String> {
 
         thread::sleep(time::Duration::from_secs_f32(config::UPDATE_DELAY_S));
 
+        if state.display == std::ptr::null_mut() {
+            state.display = unsafe { x11::XOpenDisplay(ptr::null()) };
+            if state.display == std::ptr::null_mut() {
+                log::warn!("Could not open display, doing nothing...");
+                continue;
+            }
+        }
+
+        // It's actually somewhat ok-ish to .unwrap() all over the place, since libX11 segfaults anyway when the X11 connection is gone.
+        // And we have managed to grab a display here so the only way to get here is by losing the display at runtime.
+        // In this case we have to crash.
         let cur_temp = x11::get_nv_temp(0, state.display).unwrap() as f32;
         log::debug!("current nv temp: {:.0}C", cur_temp);
         log::debug!("current fan: {:.2}%", state.fan_cur);
