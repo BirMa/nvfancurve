@@ -19,6 +19,8 @@ use std::{
     time::{self, Duration, Instant},
 };
 
+const VERSION: &str = "0.0.1";
+
 struct State {
     display: *mut *mut c_void,
     fan_cur: f32,
@@ -43,6 +45,8 @@ impl Default for State {
 
 fn main() -> Result<(), String> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    log::info!("Starting ({})...", VERSION);
 
     let mut state = State::default();
     let block_exit_handler_ref = state.block_exit.clone();
